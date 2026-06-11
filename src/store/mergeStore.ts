@@ -233,13 +233,57 @@ export const useMergeStore = create<MergeStore>((set, get) => ({
     const now = new Date().toISOString();
     const actor = '当前用户';
 
+    const currentResolvedMap = new Map(
+      session.conflicts
+        .filter((c) => c.status === 'resolved')
+        .map((c) => [c.id, c])
+    );
+
+    const snapshotResolvedMap = new Map(
+      lastSnapshot.conflicts
+        .filter((c) => c.status === 'resolved')
+        .map((c) => [c.id, c])
+    );
+
+    const reversedDecisions: MergeDecision[] = [];
+
+    for (const [cid, currentConflict] of currentResolvedMap) {
+      const snapConflict = snapshotResolvedMap.get(cid);
+      if (!snapConflict) {
+        reversedDecisions.push({
+          id: nanoid(),
+          conflictId: cid,
+          choice: currentConflict.decision ?? 'left',
+          madeAt: now,
+          madeBy: actor,
+          previousContent: currentConflict.resolvedContent ?? '',
+          newContent: lastSnapshot.conflicts.find((c) => c.id === cid)?.baseContent ?? currentConflict.baseContent,
+        });
+      } else if (
+        currentConflict.decision !== snapConflict.decision ||
+        currentConflict.resolvedContent !== snapConflict.resolvedContent
+      ) {
+        reversedDecisions.push({
+          id: nanoid(),
+          conflictId: cid,
+          choice: currentConflict.decision ?? 'left',
+          madeAt: now,
+          madeBy: actor,
+          previousContent: currentConflict.resolvedContent ?? '',
+          newContent: snapConflict.resolvedContent ?? snapConflict.baseContent,
+        });
+      }
+    }
+
     const undoEntry: MergeHistoryEntry = {
       id: nanoid(),
       action: 'undo',
-      decisions: [],
+      decisions: reversedDecisions,
       timestamp: now,
       actor,
-      description: `撤销上一步操作，恢复 ${lastSnapshot.conflicts.filter((c) => c.status === 'resolved').length} 个已解决冲突`,
+      description: reversedDecisions.length > 0
+        ? `撤销上一步操作，恢复 ${reversedDecisions.length} 个冲突为待处理状态`
+        : '撤销上一步操作',
     };
 
     set({

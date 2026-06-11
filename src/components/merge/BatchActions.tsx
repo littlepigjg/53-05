@@ -1,11 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import {
   Layers,
   ArrowLeftCircle,
   ArrowRightCircle,
-  AlertTriangle,
-  X,
-  Check,
   Undo2,
   Save,
   FileCheck,
@@ -13,13 +10,16 @@ import {
 import { clsx } from 'clsx';
 import type { MergeStats, MergeConflict } from '../../../shared/types';
 import { useMergeStore } from '../../store/mergeStore';
+import { ConfirmDialog, type ConfirmDialogConfig } from './ConfirmDialog';
+import { useToast, type ToastType } from './useToast';
+import { ToastContainer } from './Toast';
 
 interface BatchActionsProps {
   stats: MergeStats;
   conflicts: MergeConflict[];
 }
 
-type ConfirmState = null | 'all-left' | 'all-right' | 'save';
+type ConfirmTarget = null | 'all-left' | 'all-right' | 'save';
 
 export function BatchActions({ stats, conflicts }: BatchActionsProps) {
   const batchResolve = useMergeStore((s) => s.batchResolve);
@@ -28,73 +28,108 @@ export function BatchActions({ stats, conflicts }: BatchActionsProps) {
   const completeSession = useMergeStore((s) => s.completeSession);
   const hasPending = useMergeStore((s) => s.hasPendingConflicts());
 
-  const [confirm, setConfirm] = useState<ConfirmState>(null);
-  const [confirmText, setConfirmText] = useState('');
-  const [toast, setToast] = useState<string | null>(null);
+  const [confirmTarget, setConfirmTarget] = useState<ConfirmTarget>(null);
+  const { toasts, addToast, removeToast } = useToast();
 
-  useEffect(() => {
-    if (confirm) setConfirmText('');
-  }, [confirm]);
+  const pendingConflicts = conflicts.filter((c) => c.status === 'pending');
+  const pendingIds = pendingConflicts.map((c) => c.id);
 
-  useEffect(() => {
-    if (toast) {
-      const t = setTimeout(() => setToast(null), 3000);
-      return () => clearTimeout(t);
-    }
-  }, [toast]);
+  const affectedItems = pendingConflicts.map((c) => ({
+    id: c.id,
+    label: `段落 #${c.paragraphIndex}（${c.paragraphType === 'heading' ? '标题' : c.paragraphType === 'code' ? '代码' : c.paragraphType === 'list' ? '列表' : '段落'}）— ${c.baseContent.slice(0, 40)}${c.baseContent.length > 40 ? '…' : ''}`,
+  }));
 
-  const pendingIds = conflicts
-    .filter((c) => c.status === 'pending')
-    .map((c) => c.id);
+  const fireToast = useCallback(
+    (message: string, type: ToastType = 'success', details?: string[]) => {
+      addToast(message, type, details);
+    },
+    [addToast]
+  );
 
-  const handleBatchAction = (choice: 'left' | 'right') => {
+  const handleBatchLeft = () => {
     if (pendingIds.length === 0) return;
-    setConfirm(choice === 'left' ? 'all-left' : 'all-right');
+    setConfirmTarget('all-left');
   };
 
-  const confirmBatchAction = () => {
-    if (confirm === 'all-left') {
-      batchResolve('left', pendingIds);
-      setToast(`已批量保留 ${pendingIds.length} 个左侧版本`);
-      setConfirm(null);
-      return;
-    }
-    if (confirm === 'all-right') {
-      batchResolve('right', pendingIds);
-      setToast(`已批量保留 ${pendingIds.length} 个右侧版本`);
-      setConfirm(null);
-      return;
-    }
-    if (confirm === 'save') {
-      const ok = completeSession();
-      if (ok) {
-        setToast('已保存最终合并结果！');
-      }
-      setConfirm(null);
-    }
+  const handleBatchRight = () => {
+    if (pendingIds.length === 0) return;
+    setConfirmTarget('all-right');
   };
 
   const handleSave = () => {
     if (hasPending) return;
-    setConfirm('save');
+    setConfirmTarget('save');
   };
 
-  const confirmationPrompt =
-    confirm === 'all-left'
-      ? `请输入 "全部接受左侧" 确认批量操作`
-      : confirm === 'all-right'
-      ? `请输入 "全部接受右侧" 确认批量操作`
-      : confirm === 'save'
-      ? `请输入 "保存合并结果" 确认`
-      : '';
-  const confirmationMatch =
-    confirm === 'all-left'
-      ? confirmText === '全部接受左侧'
-      : confirm === 'all-right'
-      ? confirmText === '全部接受右侧'
-      : confirm === 'save'
-      ? confirmText === '保存合并结果'
-      : false;
+  const handleUndo = () => {
+    undo();
+    fireToast('已撤销上一步操作', 'info');
+  };
+
+  const confirmConfig: ConfirmDialogConfig | null = confirmTarget
+    ? {
+        title:
+          confirmTarget === 'save'
+            ? '确认保存合并结果'
+            : '确认批量操作',
+        subtitle:
+          confirmTarget === 'save'
+            ? '保存后合并结果将不可再批量撤销'
+            : `此操作将覆盖 ${pendingIds.length} 个未解决冲突的选择`,
+        dangerLevel: confirmTarget === 'save' ? 'info' : 'danger',
+        confirmText:
+          confirmTarget === 'all-left'
+            ? '全部接受左侧'
+            : confirmTarget === 'all-right'
+            ? '全部接受右侧'
+            : '保存合并结果',
+        affectedItems:
+          confirmTarget !== 'save' ? affectedItems : undefined,
+        detailContent:
+          confirmTarget === 'all-left' ? (
+            <p className="text-sm text-slate-700 leading-relaxed">
+              对所有 <span className="font-semibold text-blue-700">{pendingIds.length} 个待解决冲突</span>
+              ，<strong>一律保留用户 A 的左侧版本</strong>。
+            </p>
+          ) : confirmTarget === 'all-right' ? (
+            <p className="text-sm text-slate-700 leading-relaxed">
+              对所有 <span className="font-semibold text-green-700">{pendingIds.length} 个待解决冲突</span>
+              ，<strong>一律保留用户 B 的右侧版本</strong>。
+            </p>
+          ) : (
+            <p className="text-sm text-slate-700 leading-relaxed">
+              文档共 <span className="font-semibold text-emerald-700">{stats.totalConflicts} 个冲突</span>
+              已全部解决，自动合并段落 {stats.autoMergedParagraphs} 个。
+            </p>
+          ),
+        onConfirm: () => {
+          if (confirmTarget === 'all-left') {
+            batchResolve('left', pendingIds);
+            fireToast(
+              `已批量保留 ${pendingIds.length} 个左侧版本`,
+              'success',
+              affectedItems.map((i) => i.label)
+            );
+          } else if (confirmTarget === 'all-right') {
+            batchResolve('right', pendingIds);
+            fireToast(
+              `已批量保留 ${pendingIds.length} 个右侧版本`,
+              'success',
+              affectedItems.map((i) => i.label)
+            );
+          } else if (confirmTarget === 'save') {
+            const ok = completeSession();
+            if (ok) {
+              fireToast('已保存最终合并结果！', 'success');
+            }
+          }
+          setConfirmTarget(null);
+        },
+        onCancel: () => {
+          setConfirmTarget(null);
+        },
+      }
+    : null;
 
   const progressPct =
     stats.totalConflicts > 0
@@ -151,7 +186,7 @@ export function BatchActions({ stats, conflicts }: BatchActionsProps) {
         <div className="p-4 space-y-2">
           <div className="grid grid-cols-2 gap-2">
             <button
-              onClick={() => handleBatchAction('left')}
+              onClick={handleBatchLeft}
               disabled={pendingIds.length === 0}
               className={clsx(
                 'inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all border-2',
@@ -169,7 +204,7 @@ export function BatchActions({ stats, conflicts }: BatchActionsProps) {
               )}
             </button>
             <button
-              onClick={() => handleBatchAction('right')}
+              onClick={handleBatchRight}
               disabled={pendingIds.length === 0}
               className={clsx(
                 'inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all border-2',
@@ -189,7 +224,7 @@ export function BatchActions({ stats, conflicts }: BatchActionsProps) {
           </div>
 
           <button
-            onClick={undo}
+            onClick={handleUndo}
             disabled={!canUndo()}
             className={clsx(
               'w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all border-2',
@@ -219,117 +254,8 @@ export function BatchActions({ stats, conflicts }: BatchActionsProps) {
         </div>
       </div>
 
-      {confirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
-            <div
-              className={clsx(
-                'px-5 py-4 flex items-center gap-3',
-                confirm === 'save' ? 'bg-emerald-50' : 'bg-amber-50'
-              )}
-            >
-              <div
-                className={clsx(
-                  'w-10 h-10 rounded-xl flex items-center justify-center',
-                  confirm === 'save' ? 'bg-emerald-200 text-emerald-700' : 'bg-amber-200 text-amber-700'
-                )}
-              >
-                <AlertTriangle size={20} />
-              </div>
-              <div>
-                <h3 className="font-bold text-slate-800">
-                  {confirm === 'save' ? '确认保存合并结果' : '确认批量操作'}
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  {confirm === 'save'
-                    ? '保存后合并结果将不可再批量撤销'
-                    : `此操作将覆盖 ${pendingIds.length} 个未解决冲突的选择`}
-                </p>
-              </div>
-              <button
-                onClick={() => setConfirm(null)}
-                className="ml-auto w-8 h-8 rounded-lg hover:bg-white/60 flex items-center justify-center text-slate-500 hover:text-slate-700"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="p-5 space-y-4">
-              <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
-                <p className="text-xs font-semibold text-slate-600 mb-1">操作详情</p>
-                <p className="text-sm text-slate-700 leading-relaxed">
-                  {confirm === 'all-left' && (
-                    <>
-                      对所有 <span className="font-semibold text-blue-700">{pendingIds.length} 个待解决冲突</span>
-                      ，<strong>一律保留用户 A 的左侧版本</strong>。
-                    </>
-                  )}
-                  {confirm === 'all-right' && (
-                    <>
-                      对所有 <span className="font-semibold text-green-700">{pendingIds.length} 个待解决冲突</span>
-                      ，<strong>一律保留用户 B 的右侧版本</strong>。
-                    </>
-                  )}
-                  {confirm === 'save' && (
-                    <>
-                      文档共 <span className="font-semibold text-emerald-700">{stats.totalConflicts} 个冲突</span>
-                      已全部解决，自动合并段落 {stats.autoMergedParagraphs} 个。
-                    </>
-                  )}
-                </p>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-slate-600 mb-1.5 block">
-                  二次确认输入
-                </label>
-                <input
-                  type="text"
-                  value={confirmText}
-                  onChange={(e) => setConfirmText(e.target.value)}
-                  placeholder={confirmationPrompt.split('"')[1] || ''}
-                  className="w-full px-3 py-2.5 rounded-xl border-2 border-slate-200 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none transition-all text-sm"
-                  autoFocus
-                />
-                <p className="text-[11px] text-slate-500 mt-1.5">{confirmationPrompt}</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                <button
-                  onClick={() => setConfirm(null)}
-                  className="px-4 py-2.5 rounded-xl border-2 border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 transition-colors"
-                >
-                  取消
-                </button>
-                <button
-                  onClick={confirmBatchAction}
-                  disabled={!confirmationMatch}
-                  className={clsx(
-                    'inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all',
-                    confirmationMatch
-                      ? confirm === 'save'
-                        ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:from-emerald-600 hover:to-teal-600 shadow-sm'
-                        : 'bg-gradient-to-r from-amber-500 to-orange-500 text-white hover:from-amber-600 hover:to-orange-600 shadow-sm'
-                      : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                  )}
-                >
-                  <Check size={15} />
-                  确认执行
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4 fade-in">
-          <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 text-white text-sm font-medium shadow-2xl border border-slate-700">
-            <Check size={15} className="text-emerald-400" />
-            {toast}
-          </div>
-        </div>
-      )}
+      <ConfirmDialog config={confirmConfig} />
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
     </>
   );
 }

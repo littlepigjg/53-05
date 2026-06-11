@@ -145,14 +145,17 @@ export function MergeHistoryPanel({ history, conflicts, onJumpToConflict }: Merg
                         <div className="mt-3 rounded-xl bg-slate-50 border border-slate-200 overflow-hidden">
                           <div className="px-3 py-2 bg-slate-100/70 border-b border-slate-200">
                             <span className="text-[11px] font-semibold text-slate-600">
-                              决策详情
+                              {entry.action === 'undo' ? '撤销详情（以下决策被回退）' : '决策详情'}
                             </span>
                           </div>
                           <ul className="divide-y divide-slate-200">
                             {entry.decisions.map((dec) => {
                               const conflict = conflictsById.get(dec.conflictId);
+                              const isUndoEntry = entry.action === 'undo';
                               const choiceLabel =
-                                dec.choice === 'left'
+                                isUndoEntry
+                                  ? `撤销${dec.choice === 'left' ? '左侧' : dec.choice === 'right' ? '右侧' : dec.choice === 'both' ? '合并' : '自定义'}决策`
+                                  : dec.choice === 'left'
                                   ? '保留左侧'
                                   : dec.choice === 'right'
                                   ? '保留右侧'
@@ -160,7 +163,9 @@ export function MergeHistoryPanel({ history, conflicts, onJumpToConflict }: Merg
                                   ? '合并两边'
                                   : '自定义内容';
                               const choiceCls =
-                                dec.choice === 'left'
+                                isUndoEntry
+                                  ? 'bg-orange-100 text-orange-700'
+                                  : dec.choice === 'left'
                                   ? 'bg-blue-100 text-blue-700'
                                   : dec.choice === 'right'
                                   ? 'bg-green-100 text-green-700'
@@ -190,6 +195,13 @@ export function MergeHistoryPanel({ history, conflicts, onJumpToConflict }: Merg
                                       </button>
                                     )}
                                   </div>
+                                  {isUndoEntry && dec.previousContent && (
+                                    <div className="mt-1.5 pl-2 border-l-2 border-orange-200">
+                                      <p className="text-[10px] text-slate-500 leading-relaxed line-clamp-2">
+                                        原决策内容：{dec.previousContent.slice(0, 80)}{dec.previousContent.length > 80 ? '…' : ''}
+                                      </p>
+                                    </div>
+                                  )}
                                 </li>
                               );
                             })}
