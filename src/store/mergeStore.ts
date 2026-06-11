@@ -13,7 +13,11 @@ import { detectConflicts, applyDecision, mergeDocuments } from '../utils/diffUti
 
 interface Snapshot {
   conflicts: MergeConflict[];
-  history: MergeHistoryEntry[];
+}
+
+function makeContentSummary(content: string): string {
+  const singleLine = content.replace(/\r?\n/g, ' ').trim();
+  return singleLine.length > 60 ? singleLine.slice(0, 60) + '…' : singleLine;
 }
 
 interface MergeStore {
@@ -104,13 +108,12 @@ export const useMergeStore = create<MergeStore>((set, get) => ({
     const { session, snapshots } = get();
     if (!session) return;
 
-    const snapshot: Snapshot = {
-      conflicts: JSON.parse(JSON.stringify(session.conflicts)),
-      history: JSON.parse(JSON.stringify(session.history)),
-    };
-
     const conflict = session.conflicts.find((c) => c.id === conflictId);
     if (!conflict || conflict.status === 'resolved') return;
+
+    const snapshot: Snapshot = {
+      conflicts: JSON.parse(JSON.stringify(session.conflicts)),
+    };
 
     const resolvedContent = applyDecision(conflict, choice, customContent);
     const now = new Date().toISOString();
@@ -118,6 +121,8 @@ export const useMergeStore = create<MergeStore>((set, get) => ({
     const decision: MergeDecision = {
       id: nanoid(),
       conflictId,
+      paragraphIndex: conflict.paragraphIndex,
+      contentSummary: makeContentSummary(conflict.baseContent),
       choice,
       customContent,
       madeAt: now,
@@ -169,12 +174,10 @@ export const useMergeStore = create<MergeStore>((set, get) => ({
 
     const snapshot: Snapshot = {
       conflicts: JSON.parse(JSON.stringify(session.conflicts)),
-      history: JSON.parse(JSON.stringify(session.history)),
     };
 
     const now = new Date().toISOString();
     const decisions: MergeDecision[] = [];
-    const updatedConflictIds = new Set<string>();
 
     const updatedConflicts = session.conflicts.map((c) => {
       if (conflictIds.includes(c.id) && c.status === 'pending') {
@@ -182,13 +185,14 @@ export const useMergeStore = create<MergeStore>((set, get) => ({
         decisions.push({
           id: nanoid(),
           conflictId: c.id,
+          paragraphIndex: c.paragraphIndex,
+          contentSummary: makeContentSummary(c.baseContent),
           choice,
           madeAt: now,
           madeBy: actor,
           previousContent: c.baseContent,
           newContent: resolvedContent,
         });
-        updatedConflictIds.add(c.id);
         return {
           ...c,
           status: 'resolved' as const,
@@ -253,11 +257,13 @@ export const useMergeStore = create<MergeStore>((set, get) => ({
         reversedDecisions.push({
           id: nanoid(),
           conflictId: cid,
+          paragraphIndex: currentConflict.paragraphIndex,
+          contentSummary: makeContentSummary(currentConflict.baseContent),
           choice: currentConflict.decision ?? 'left',
           madeAt: now,
           madeBy: actor,
           previousContent: currentConflict.resolvedContent ?? '',
-          newContent: lastSnapshot.conflicts.find((c) => c.id === cid)?.baseContent ?? currentConflict.baseContent,
+          newContent: currentConflict.baseContent,
         });
       } else if (
         currentConflict.decision !== snapConflict.decision ||
@@ -266,6 +272,8 @@ export const useMergeStore = create<MergeStore>((set, get) => ({
         reversedDecisions.push({
           id: nanoid(),
           conflictId: cid,
+          paragraphIndex: currentConflict.paragraphIndex,
+          contentSummary: makeContentSummary(currentConflict.baseContent),
           choice: currentConflict.decision ?? 'left',
           madeAt: now,
           madeBy: actor,
@@ -282,15 +290,15 @@ export const useMergeStore = create<MergeStore>((set, get) => ({
       timestamp: now,
       actor,
       description: reversedDecisions.length > 0
-        ? `撤销上一步操作，恢复 ${reversedDecisions.length} 个冲突为待处理状态`
-        : '撤销上一步操作',
+        ? `撤销操作，恢复 ${reversedDecisions.length} 个冲突为待处理状态`
+        : '撤销操作',
     };
 
     set({
       session: {
         ...session,
         conflicts: lastSnapshot.conflicts,
-        history: [...lastSnapshot.history, undoEntry],
+        history: [...session.history, undoEntry],
       },
       snapshots: snapshots.slice(0, -1),
       selectedConflictId:

@@ -172,6 +172,10 @@ export function MergeHistoryPanel({ history, conflicts, onJumpToConflict }: Merg
                                   : dec.choice === 'both'
                                   ? 'bg-purple-100 text-purple-700'
                                   : 'bg-amber-100 text-amber-700';
+
+                              const displayIndex = dec.paragraphIndex ?? conflict?.paragraphIndex ?? '?';
+                              const displaySummary = dec.contentSummary || (conflict ? conflict.baseContent.slice(0, 60) : '');
+
                               return (
                                 <li
                                   key={dec.id}
@@ -182,9 +186,14 @@ export function MergeHistoryPanel({ history, conflicts, onJumpToConflict }: Merg
                                       <span className={clsx('shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded', choiceCls)}>
                                         {choiceLabel}
                                       </span>
-                                      <span className="text-xs text-slate-600 truncate">
-                                        段落 #{conflict?.paragraphIndex ?? '?'}
+                                      <span className="text-xs text-slate-600 shrink-0">
+                                        段落 #{displayIndex}
                                       </span>
+                                      {displaySummary && (
+                                        <span className="text-[10px] text-slate-400 truncate">
+                                          — {displaySummary}
+                                        </span>
+                                      )}
                                     </div>
                                     {onJumpToConflict && conflict && (
                                       <button
@@ -199,6 +208,13 @@ export function MergeHistoryPanel({ history, conflicts, onJumpToConflict }: Merg
                                     <div className="mt-1.5 pl-2 border-l-2 border-orange-200">
                                       <p className="text-[10px] text-slate-500 leading-relaxed line-clamp-2">
                                         原决策内容：{dec.previousContent.slice(0, 80)}{dec.previousContent.length > 80 ? '…' : ''}
+                                      </p>
+                                    </div>
+                                  )}
+                                  {!isUndoEntry && dec.newContent && (
+                                    <div className="mt-1.5 pl-2 border-l-2 border-emerald-200">
+                                      <p className="text-[10px] text-slate-500 leading-relaxed line-clamp-2">
+                                        决策结果：{dec.newContent.slice(0, 80)}{dec.newContent.length > 80 ? '…' : ''}
                                       </p>
                                     </div>
                                   )}

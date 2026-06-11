@@ -103,19 +103,20 @@ export function BatchActions({ stats, conflicts }: BatchActionsProps) {
             </p>
           ),
         onConfirm: () => {
+          const snapshotLabels = affectedItems.map((i) => i.label);
           if (confirmTarget === 'all-left') {
             batchResolve('left', pendingIds);
             fireToast(
               `已批量保留 ${pendingIds.length} 个左侧版本`,
               'success',
-              affectedItems.map((i) => i.label)
+              snapshotLabels
             );
           } else if (confirmTarget === 'all-right') {
             batchResolve('right', pendingIds);
             fireToast(
               `已批量保留 ${pendingIds.length} 个右侧版本`,
               'success',
-              affectedItems.map((i) => i.label)
+              snapshotLabels
             );
           } else if (confirmTarget === 'save') {
             const ok = completeSession();

@@ -98,6 +98,8 @@ export interface MergeConflict {
 export interface MergeDecision {
   id: string;
   conflictId: string;
+  paragraphIndex: number;
+  contentSummary: string;
   choice: DecisionChoice;
   customContent?: string;
   madeAt: string;
