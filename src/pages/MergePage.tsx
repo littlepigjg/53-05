@@ -1,11 +1,12 @@
-import { useEffect } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useMergeStore } from '../store/mergeStore';
 import { ConflictList } from '../components/merge/ConflictList';
 import { ThreeWayDiffView } from '../components/merge/ThreeWayDiffView';
 import { ConflictResolutionPanel } from '../components/merge/ConflictResolutionPanel';
 import { MergeHistoryPanel } from '../components/merge/MergeHistoryPanel';
 import { BatchActions } from '../components/merge/BatchActions';
-import type { ParsedDocument } from '../../shared/types';
+import { ChangeDetailModal } from '../components/merge/ChangeDetailModal';
+import type { ParsedDocument, MergeDecision } from '../../shared/types';
 import {
   GitMerge,
   FileText,
@@ -165,6 +166,17 @@ export function MergePage() {
   const getStats = useMergeStore((s) => s.getStats);
   const getMergedDocument = useMergeStore((s) => s.getMergedDocument);
 
+  const [detailModal, setDetailModal] = useState<{
+    title: string;
+    subtitle?: string;
+    decisions: MergeDecision[];
+    isUndo?: boolean;
+  } | null>(null);
+
+  const handleShowDetails = useCallback((title: string, decisions: MergeDecision[], isUndo?: boolean) => {
+    setDetailModal({ title, decisions, isUndo });
+  }, []);
+
   useEffect(() => {
     initializeSession(
       'demo-doc-001',
@@ -281,17 +293,28 @@ export function MergePage() {
           </section>
 
           <aside className="col-span-3 space-y-4">
-            <BatchActions stats={stats} conflicts={session.conflicts} />
+            <BatchActions stats={stats} conflicts={session.conflicts} onShowDetails={handleShowDetails} />
             <div className="h-[calc(100vh-420px)]">
               <MergeHistoryPanel
                 history={session.history}
                 conflicts={session.conflicts}
                 onJumpToConflict={(id) => selectConflict(id)}
+                onShowDetails={handleShowDetails}
               />
             </div>
           </aside>
         </div>
       </main>
+
+      {detailModal && (
+        <ChangeDetailModal
+          title={detailModal.title}
+          subtitle={detailModal.subtitle}
+          decisions={detailModal.decisions}
+          isUndo={detailModal.isUndo}
+          onClose={() => setDetailModal(null)}
+        />
+      )}
     </div>
   );
 }

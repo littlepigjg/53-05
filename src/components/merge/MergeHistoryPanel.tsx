@@ -10,15 +10,29 @@ import {
   User,
   Clock,
   FileText,
+  Eye,
+  ArrowRight,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import type { MergeHistoryEntry, MergeConflict } from '../../../shared/types';
+import type { MergeHistoryEntry, MergeConflict, MergeDecision } from '../../../shared/types';
 
 interface MergeHistoryPanelProps {
   history: MergeHistoryEntry[];
   conflicts: MergeConflict[];
   onJumpToConflict?: (conflictId: string) => void;
+  onShowDetails?: (title: string, decisions: MergeDecision[], isUndo?: boolean) => void;
 }
+
+const TYPE_LABEL: Record<string, string> = {
+  heading: '标题',
+  paragraph: '段落',
+  list: '列表',
+  code: '代码块',
+  quote: '引用',
+  table: '表格',
+};
 
 function actionIcon(action: MergeHistoryEntry['action']) {
   switch (action) {
@@ -49,7 +63,147 @@ function actionBadge(action: MergeHistoryEntry['action']) {
   );
 }
 
-export function MergeHistoryPanel({ history, conflicts, onJumpToConflict }: MergeHistoryPanelProps) {
+interface DecisionDetailProps {
+  dec: MergeDecision;
+  isUndo: boolean;
+  onJump?: () => void;
+}
+
+function DecisionDetail({ dec, isUndo, onJump }: DecisionDetailProps) {
+  const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const choiceLabel = isUndo
+    ? `撤销${dec.choice === 'left' ? '左侧' : dec.choice === 'right' ? '右侧' : dec.choice === 'both' ? '合并' : '自定义'}决策`
+    : dec.choice === 'left'
+    ? '保留左侧'
+    : dec.choice === 'right'
+    ? '保留右侧'
+    : dec.choice === 'both'
+    ? '合并两边'
+    : '自定义内容';
+  const choiceCls = isUndo
+    ? 'bg-orange-100 text-orange-700'
+    : dec.choice === 'left'
+    ? 'bg-blue-100 text-blue-700'
+    : dec.choice === 'right'
+    ? 'bg-green-100 text-green-700'
+    : dec.choice === 'both'
+    ? 'bg-purple-100 text-purple-700'
+    : 'bg-amber-100 text-amber-700';
+
+  const copy = async (k: string, v: string) => {
+    try {
+      await navigator.clipboard.writeText(v);
+      setCopied(k);
+      setTimeout(() => setCopied(null), 1200);
+    } catch {
+      // ignore
+    }
+  };
+
+  return (
+    <li className="hover:bg-white transition-colors">
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full text-left px-3 py-2.5 flex items-center justify-between gap-2"
+      >
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          {expanded ? <ChevronDown size={12} className="text-slate-400 shrink-0" /> : <ChevronRight size={12} className="text-slate-400 shrink-0" />}
+          <span className={clsx('shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded', choiceCls)}>
+            {choiceLabel}
+          </span>
+          <span className="text-xs text-slate-700 font-semibold shrink-0">
+            段落 #{dec.paragraphIndex}
+          </span>
+          {dec.paragraphType && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium shrink-0">
+              {TYPE_LABEL[dec.paragraphType] ?? dec.paragraphType}
+            </span>
+          )}
+          <span className="text-[10px] text-slate-500 truncate flex-1 min-w-0">
+            {dec.contentSummary}
+          </span>
+        </div>
+        {onJump && (
+          <span
+            role="button"
+            onClick={(e) => { e.stopPropagation(); onJump(); }}
+            className="text-[11px] text-indigo-600 hover:text-indigo-700 hover:underline font-medium shrink-0"
+          >
+            跳转
+          </span>
+        )}
+      </button>
+
+      {expanded && (
+        <div className="px-3 pb-3">
+          <div className="rounded-lg border border-slate-200 overflow-hidden">
+            <div className="grid grid-cols-[1fr_auto_1fr] gap-0">
+              <div className="border-r border-slate-200">
+                <div className="px-2 py-1.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                  <span className="text-[10px] font-semibold text-slate-600">
+                    {isUndo ? '被撤销的原内容' : '修改前'}
+                  </span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); copy(`prev-${dec.id}`, dec.previousContent); }}
+                    className={clsx(
+                      'inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-medium',
+                      copied === `prev-${dec.id}`
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-white border border-slate-200 text-slate-500 hover:bg-slate-50'
+                    )}
+                  >
+                    {copied === `prev-${dec.id}` ? <Check size={9} /> : <Copy size={9} />}
+                    {copied === `prev-${dec.id}` ? '已复制' : '复制'}
+                  </button>
+                </div>
+                <pre className={clsx(
+                  'px-2 py-2 text-[10px] whitespace-pre-wrap break-all leading-relaxed max-h-48 overflow-auto',
+                  isUndo ? 'bg-orange-50/40 text-slate-700' : 'bg-red-50/40 text-slate-700'
+                )}>
+{dec.previousContent || '（空）'}
+                </pre>
+              </div>
+
+              <div className="w-6 bg-slate-50 border-r border-slate-200 flex items-center justify-center">
+                <ArrowRight size={10} className="text-slate-400" />
+              </div>
+
+              <div>
+                <div className="px-2 py-1.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                  <span className="text-[10px] font-semibold text-slate-600">
+                    {isUndo ? '撤销回退后' : '修改后'}
+                  </span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); copy(`new-${dec.id}`, dec.newContent); }}
+                    className={clsx(
+                      'inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-medium',
+                      copied === `new-${dec.id}`
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-white border border-slate-200 text-slate-500 hover:bg-slate-50'
+                    )}
+                  >
+                    {copied === `new-${dec.id}` ? <Check size={9} /> : <Copy size={9} />}
+                    {copied === `new-${dec.id}` ? '已复制' : '复制'}
+                  </button>
+                </div>
+                <pre className={clsx(
+                  'px-2 py-2 text-[10px] whitespace-pre-wrap break-all leading-relaxed max-h-48 overflow-auto',
+                  isUndo ? 'bg-orange-50/30 text-slate-700' : 'bg-green-50/40 text-slate-700'
+                )}>
+{dec.newContent || '（空）'}
+                </pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </li>
+  );
+}
+
+export function MergeHistoryPanel({ history, conflicts, onJumpToConflict, onShowDetails }: MergeHistoryPanelProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   const toggle = (id: string) => {
@@ -91,6 +245,7 @@ export function MergeHistoryPanel({ history, conflicts, onJumpToConflict }: Merg
             {[...history].reverse().map((entry) => {
               const expanded = expandedIds.has(entry.id);
               const decisionsCount = entry.decisions.length;
+              const isUndo = entry.action === 'undo';
               return (
                 <div key={entry.id} className="relative pl-14 pr-4 py-3 group">
                   <div className="absolute left-[18px] top-4 w-6 h-6 rounded-full bg-white border-2 border-slate-200 group-hover:border-indigo-400 flex items-center justify-center transition-colors z-10 shadow-sm">
@@ -118,9 +273,18 @@ export function MergeHistoryPanel({ history, conflicts, onJumpToConflict }: Merg
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         {actionBadge(entry.action)}
-                        <span className="text-xs font-semibold text-slate-700 truncate">
+                        <span className="text-xs font-semibold text-slate-700 truncate flex-1 min-w-0">
                           {entry.description}
                         </span>
+                        {decisionsCount > 0 && onShowDetails && (
+                          <button
+                            onClick={() => onShowDetails(entry.description, entry.decisions, isUndo)}
+                            className="inline-flex items-center gap-1 text-[10px] font-semibold text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 px-1.5 py-0.5 rounded transition-colors shrink-0"
+                          >
+                            <Eye size={10} />
+                            查看完整对比
+                          </button>
+                        )}
                       </div>
                       <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-500">
                         <span className="inline-flex items-center gap-1">
@@ -143,82 +307,28 @@ export function MergeHistoryPanel({ history, conflicts, onJumpToConflict }: Merg
 
                       {expanded && decisionsCount > 0 && (
                         <div className="mt-3 rounded-xl bg-slate-50 border border-slate-200 overflow-hidden">
-                          <div className="px-3 py-2 bg-slate-100/70 border-b border-slate-200">
+                          <div className="px-3 py-2 bg-slate-100/70 border-b border-slate-200 flex items-center justify-between">
                             <span className="text-[11px] font-semibold text-slate-600">
-                              {entry.action === 'undo' ? '撤销详情（以下决策被回退）' : '决策详情'}
+                              {isUndo ? '撤销详情（以下决策被回退）' : '决策详情'}
+                            </span>
+                            <span className="text-[10px] text-slate-500">
+                              点击每条可展开完整对比
                             </span>
                           </div>
                           <ul className="divide-y divide-slate-200">
                             {entry.decisions.map((dec) => {
                               const conflict = conflictsById.get(dec.conflictId);
-                              const isUndoEntry = entry.action === 'undo';
-                              const choiceLabel =
-                                isUndoEntry
-                                  ? `撤销${dec.choice === 'left' ? '左侧' : dec.choice === 'right' ? '右侧' : dec.choice === 'both' ? '合并' : '自定义'}决策`
-                                  : dec.choice === 'left'
-                                  ? '保留左侧'
-                                  : dec.choice === 'right'
-                                  ? '保留右侧'
-                                  : dec.choice === 'both'
-                                  ? '合并两边'
-                                  : '自定义内容';
-                              const choiceCls =
-                                isUndoEntry
-                                  ? 'bg-orange-100 text-orange-700'
-                                  : dec.choice === 'left'
-                                  ? 'bg-blue-100 text-blue-700'
-                                  : dec.choice === 'right'
-                                  ? 'bg-green-100 text-green-700'
-                                  : dec.choice === 'both'
-                                  ? 'bg-purple-100 text-purple-700'
-                                  : 'bg-amber-100 text-amber-700';
-
-                              const displayIndex = dec.paragraphIndex ?? conflict?.paragraphIndex ?? '?';
-                              const displaySummary = dec.contentSummary || (conflict ? conflict.baseContent.slice(0, 60) : '');
-
                               return (
-                                <li
+                                <DecisionDetail
                                   key={dec.id}
-                                  className="px-3 py-2.5 hover:bg-white transition-colors"
-                                >
-                                  <div className="flex items-center justify-between gap-2">
-                                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                                      <span className={clsx('shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded', choiceCls)}>
-                                        {choiceLabel}
-                                      </span>
-                                      <span className="text-xs text-slate-600 shrink-0">
-                                        段落 #{displayIndex}
-                                      </span>
-                                      {displaySummary && (
-                                        <span className="text-[10px] text-slate-400 truncate">
-                                          — {displaySummary}
-                                        </span>
-                                      )}
-                                    </div>
-                                    {onJumpToConflict && conflict && (
-                                      <button
-                                        onClick={() => onJumpToConflict(conflict.id)}
-                                        className="text-[11px] text-indigo-600 hover:text-indigo-700 hover:underline font-medium shrink-0"
-                                      >
-                                        查看
-                                      </button>
-                                    )}
-                                  </div>
-                                  {isUndoEntry && dec.previousContent && (
-                                    <div className="mt-1.5 pl-2 border-l-2 border-orange-200">
-                                      <p className="text-[10px] text-slate-500 leading-relaxed line-clamp-2">
-                                        原决策内容：{dec.previousContent.slice(0, 80)}{dec.previousContent.length > 80 ? '…' : ''}
-                                      </p>
-                                    </div>
-                                  )}
-                                  {!isUndoEntry && dec.newContent && (
-                                    <div className="mt-1.5 pl-2 border-l-2 border-emerald-200">
-                                      <p className="text-[10px] text-slate-500 leading-relaxed line-clamp-2">
-                                        决策结果：{dec.newContent.slice(0, 80)}{dec.newContent.length > 80 ? '…' : ''}
-                                      </p>
-                                    </div>
-                                  )}
-                                </li>
+                                  dec={dec}
+                                  isUndo={isUndo}
+                                  onJump={
+                                    onJumpToConflict && conflict
+                                      ? () => onJumpToConflict(conflict.id)
+                                      : undefined
+                                  }
+                                />
                               );
                             })}
                           </ul>

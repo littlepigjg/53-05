@@ -99,6 +99,7 @@ export interface MergeDecision {
   id: string;
   conflictId: string;
   paragraphIndex: number;
+  paragraphType: ParagraphType;
   contentSummary: string;
   choice: DecisionChoice;
   customContent?: string;

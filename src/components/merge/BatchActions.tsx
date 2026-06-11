@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import {
   Layers,
   ArrowLeftCircle,
@@ -8,20 +8,21 @@ import {
   FileCheck,
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import type { MergeStats, MergeConflict } from '../../../shared/types';
+import type { MergeStats, MergeConflict, MergeDecision } from '../../../shared/types';
 import { useMergeStore } from '../../store/mergeStore';
 import { ConfirmDialog, type ConfirmDialogConfig } from './ConfirmDialog';
-import { useToast, type ToastType } from './useToast';
+import { useToast } from './useToast';
 import { ToastContainer } from './Toast';
 
 interface BatchActionsProps {
   stats: MergeStats;
   conflicts: MergeConflict[];
+  onShowDetails: (title: string, decisions: MergeDecision[], isUndo?: boolean) => void;
 }
 
 type ConfirmTarget = null | 'all-left' | 'all-right' | 'save';
 
-export function BatchActions({ stats, conflicts }: BatchActionsProps) {
+export function BatchActions({ stats, conflicts, onShowDetails }: BatchActionsProps) {
   const batchResolve = useMergeStore((s) => s.batchResolve);
   const undo = useMergeStore((s) => s.undo);
   const canUndo = useMergeStore((s) => s.canUndo);
@@ -36,15 +37,8 @@ export function BatchActions({ stats, conflicts }: BatchActionsProps) {
 
   const affectedItems = pendingConflicts.map((c) => ({
     id: c.id,
-    label: `段落 #${c.paragraphIndex}（${c.paragraphType === 'heading' ? '标题' : c.paragraphType === 'code' ? '代码' : c.paragraphType === 'list' ? '列表' : '段落'}）— ${c.baseContent.slice(0, 40)}${c.baseContent.length > 40 ? '…' : ''}`,
+    label: `段落 #${c.paragraphIndex}（${c.paragraphType === 'heading' ? '标题' : c.paragraphType === 'code' ? '代码' : c.paragraphType === 'list' ? '列表' : '段落'}）— ${c.baseContent.slice(0, 60)}${c.baseContent.length > 60 ? '…' : ''}`,
   }));
-
-  const fireToast = useCallback(
-    (message: string, type: ToastType = 'success', details?: string[]) => {
-      addToast(message, type, details);
-    },
-    [addToast]
-  );
 
   const handleBatchLeft = () => {
     if (pendingIds.length === 0) return;
@@ -62,8 +56,17 @@ export function BatchActions({ stats, conflicts }: BatchActionsProps) {
   };
 
   const handleUndo = () => {
-    undo();
-    fireToast('已撤销上一步操作', 'info');
+    const reversed = undo();
+    if (reversed.length > 0) {
+      addToast({
+        message: `已撤销上一步操作（恢复 ${reversed.length} 个冲突）`,
+        type: 'info',
+        decisions: reversed,
+        isUndo: true,
+      });
+    } else {
+      addToast({ message: '没有可撤销的操作', type: 'info' });
+    }
   };
 
   const confirmConfig: ConfirmDialogConfig | null = confirmTarget
@@ -105,23 +108,25 @@ export function BatchActions({ stats, conflicts }: BatchActionsProps) {
         onConfirm: () => {
           const snapshotLabels = affectedItems.map((i) => i.label);
           if (confirmTarget === 'all-left') {
-            batchResolve('left', pendingIds);
-            fireToast(
-              `已批量保留 ${pendingIds.length} 个左侧版本`,
-              'success',
-              snapshotLabels
-            );
+            const decisions = batchResolve('left', pendingIds);
+            addToast({
+              message: `已批量保留 ${decisions.length} 个左侧版本`,
+              type: 'success',
+              details: snapshotLabels,
+              decisions,
+            });
           } else if (confirmTarget === 'all-right') {
-            batchResolve('right', pendingIds);
-            fireToast(
-              `已批量保留 ${pendingIds.length} 个右侧版本`,
-              'success',
-              snapshotLabels
-            );
+            const decisions = batchResolve('right', pendingIds);
+            addToast({
+              message: `已批量保留 ${decisions.length} 个右侧版本`,
+              type: 'success',
+              details: snapshotLabels,
+              decisions,
+            });
           } else if (confirmTarget === 'save') {
             const ok = completeSession();
             if (ok) {
-              fireToast('已保存最终合并结果！', 'success');
+              addToast({ message: '已保存最终合并结果！', type: 'success' });
             }
           }
           setConfirmTarget(null);
@@ -256,7 +261,7 @@ export function BatchActions({ stats, conflicts }: BatchActionsProps) {
       </div>
 
       <ConfirmDialog config={confirmConfig} />
-      <ToastContainer toasts={toasts} onRemove={removeToast} />
+      <ToastContainer toasts={toasts} onRemove={removeToast} onShowDetails={onShowDetails} />
     </>
   );
 }

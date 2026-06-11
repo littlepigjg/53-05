@@ -48,8 +48,8 @@ interface MergeStore {
     choice: 'left' | 'right',
     conflictIds: string[],
     actor?: string
-  ) => void;
-  undo: () => void;
+  ) => MergeDecision[];
+  undo: () => MergeDecision[];
   canUndo: () => boolean;
   getStats: () => MergeStats;
   hasPendingConflicts: () => boolean;
@@ -122,6 +122,7 @@ export const useMergeStore = create<MergeStore>((set, get) => ({
       id: nanoid(),
       conflictId,
       paragraphIndex: conflict.paragraphIndex,
+      paragraphType: conflict.paragraphType,
       contentSummary: makeContentSummary(conflict.baseContent),
       choice,
       customContent,
@@ -168,9 +169,9 @@ export const useMergeStore = create<MergeStore>((set, get) => ({
     });
   },
 
-  batchResolve: (choice, conflictIds, actor = '当前用户') => {
+  batchResolve: (choice, conflictIds, actor = '当前用户'): MergeDecision[] => {
     const { session, snapshots } = get();
-    if (!session) return;
+    if (!session) return [];
 
     const snapshot: Snapshot = {
       conflicts: JSON.parse(JSON.stringify(session.conflicts)),
@@ -186,6 +187,7 @@ export const useMergeStore = create<MergeStore>((set, get) => ({
           id: nanoid(),
           conflictId: c.id,
           paragraphIndex: c.paragraphIndex,
+          paragraphType: c.paragraphType,
           contentSummary: makeContentSummary(c.baseContent),
           choice,
           madeAt: now,
@@ -205,7 +207,7 @@ export const useMergeStore = create<MergeStore>((set, get) => ({
       return c;
     });
 
-    if (decisions.length === 0) return;
+    if (decisions.length === 0) return [];
 
     const historyEntry: MergeHistoryEntry = {
       id: nanoid(),
@@ -227,11 +229,13 @@ export const useMergeStore = create<MergeStore>((set, get) => ({
       selectedConflictId: firstPending?.id ?? null,
       snapshots: [...snapshots, snapshot],
     });
+
+    return decisions;
   },
 
   undo: () => {
     const { session, snapshots } = get();
-    if (!session || snapshots.length === 0) return;
+    if (!session || snapshots.length === 0) return [];
 
     const lastSnapshot = snapshots[snapshots.length - 1];
     const now = new Date().toISOString();
@@ -258,6 +262,7 @@ export const useMergeStore = create<MergeStore>((set, get) => ({
           id: nanoid(),
           conflictId: cid,
           paragraphIndex: currentConflict.paragraphIndex,
+          paragraphType: currentConflict.paragraphType,
           contentSummary: makeContentSummary(currentConflict.baseContent),
           choice: currentConflict.decision ?? 'left',
           madeAt: now,
@@ -273,6 +278,7 @@ export const useMergeStore = create<MergeStore>((set, get) => ({
           id: nanoid(),
           conflictId: cid,
           paragraphIndex: currentConflict.paragraphIndex,
+          paragraphType: currentConflict.paragraphType,
           contentSummary: makeContentSummary(currentConflict.baseContent),
           choice: currentConflict.decision ?? 'left',
           madeAt: now,
@@ -304,6 +310,8 @@ export const useMergeStore = create<MergeStore>((set, get) => ({
       selectedConflictId:
         lastSnapshot.conflicts.find((c) => c.status === 'pending')?.id ?? null,
     });
+
+    return reversedDecisions;
   },
 
   canUndo: () => {

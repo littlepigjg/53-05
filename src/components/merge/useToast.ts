@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import type { MergeDecision } from '../../../shared/types';
 
 export type ToastType = 'success' | 'error' | 'info';
 
@@ -7,6 +8,9 @@ export interface ToastItem {
   message: string;
   type: ToastType;
   details?: string[];
+  decisions?: MergeDecision[];
+  isUndo?: boolean;
+  autoCloseMs?: number;
 }
 
 let toastCounter = 0;
@@ -14,9 +18,9 @@ let toastCounter = 0;
 export function useToast() {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const addToast = useCallback((message: string, type: ToastType = 'success', details?: string[]) => {
+  const addToast = useCallback((item: Omit<ToastItem, 'id'>) => {
     const id = `toast-${++toastCounter}`;
-    setToasts((prev) => [...prev, { id, message, type, details }]);
+    setToasts((prev) => [...prev, { ...item, id }]);
     return id;
   }, []);
 
